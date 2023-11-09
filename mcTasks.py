@@ -73,5 +73,7 @@ class MCTaskSet:
                 print(u, tasks)
 
 
-app = MCTaskSet()
-app.main()
+if __name__ == "__main__":
+
+    app = MCTaskSet()
+    app.main()
