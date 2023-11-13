@@ -1,6 +1,7 @@
 import random
 import pickle
 import time
+from tqdm import tqdm
 
 
 class MCTask:
@@ -31,17 +32,23 @@ class MCTaskSet:
     def calc_utilization(self, tasks):
         task: MCTask
         u_lolo = 0
+        u_lohi = 0
         u_hihi = 0
+        u_hilo = 0
 
         for task in tasks:
             if task.X == "HI":
                 u_hi = task.C / task.T_HI
+                u_lo = task.C / task.T_LO
+                u_lohi += u_lo
                 u_hihi += u_hi
             elif task.X == "LO":
                 u_lo = task.C / task.T_LO
+                u_hi = task.C / task.T_HI
+                u_hilo += u_hi
                 u_lolo += u_lo
 
-        return u_lolo + u_hihi
+        return [u_lolo + u_lohi, u_lohi + u_hihi, u_lolo + u_hihi]
 
     def gen_random_task(self, mode):
         if mode == "HI":
@@ -76,20 +83,23 @@ class MCTaskSet:
         return tasks
 
     def create_taskset(self, n=100, hi=3, lo=3):
+        pbar = tqdm(total=n)
         memory = []
         while True:
             tasks = self.gen_random_taskset(hi, lo)
             u = self.calc_utilization(tasks)
 
             # check same tasks
-            if self.max_utilization >= u >= self.min_utilization:
+            if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] < 1 and u[1] < 1:
                 if tasks in memory:
                     continue
                 else:
                     memory.append(tasks)
-                    print(u, tasks)
+                    pbar.update(1)
+                    # print(u, tasks)
 
             if len(memory) == n:
+                pbar.close()
                 break
         return memory
 
