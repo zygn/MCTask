@@ -1,6 +1,5 @@
 import math
 import copy
-import time
 from tqdm import tqdm
 from collections import deque
 from typing import Optional
@@ -40,19 +39,18 @@ class MCTaskSimulator:
     def release_task(self, task: list) -> Optional[list]:
 
         if self.current_mode == "HI":
+            task[1].deadline = self.current_time + task[1].T_HI
             if self.current_time == 0:
-                task[1].deadline = self.current_time + task[1].T_HI
                 return task
             elif self.current_time % task[1].T_HI == 0:
-                task[1].deadline = self.current_time + task[1].T_HI
+
                 return task
 
         elif self.current_mode == "LO":
+            task[1].deadline = self.current_time + task[1].T_LO
             if self.current_time == 0:
-                task[1].deadline = self.current_time + task[1].T_LO
                 return task
             elif self.current_time % task[1].T_LO == 0:
-                task[1].deadline = self.current_time + task[1].T_LO
                 return task
 
         return None
@@ -66,25 +64,16 @@ class MCTaskSimulator:
 
         if self.mode_schedule[0].time <= self.current_time:
             mc = self.mode_schedule.popleft()
-            # print("Mode Changed {}->{} when {}".format(self.current_mode, mc.mode, self.current_time))
             self.current_mode = mc.mode
 
         return
 
     def simulate(self, tasks):
-        t0 = time.time()
         lcm = self.tasks_lcm(tasks)
         u = MCTaskSet().calc_utilization(tasks)
-
         tasks = [[i + 1, task] for i, task in enumerate(tasks)]
-        # print("Scheduling tasks: \n\t" + "\n\t".join([f"{task}" for task in tasks]))
-        # print("LCM: " + str(lcm))
-        # print("Utilization: " + str(u))
-        # print("Start simulation...")
-        # print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
 
         while self.current_time < lcm:
-
             # task release
             for task in tasks:
                 t = copy.deepcopy(task)
@@ -92,14 +81,11 @@ class MCTaskSimulator:
 
                 if released_task is not None:
                     self.job_queue.append(t)
-                    # print(f"\t\t{t[0]} Task released {t[1]}")
 
             # 1sec spend
             self.current_time += 1
             # check scheduled mode change
             self.mode_change()
-
-            # print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
 
             # early deadline first
             self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
@@ -122,11 +108,8 @@ class MCTaskSimulator:
                 task[1].C -= 1
                 if task[1].C == 0:
                     self.job_queue.remove(task)
-                    # print(f"\t\t{task[0]} Task finished {task[1]}")
                 break
 
-        # print("Task scheduled successfully ({:.3f}s)".format(time.time()-t0))
-        # print("----------------------------------------------")
 
 if __name__ == "__main__":
     app = MCTaskSimulator()
@@ -140,11 +123,8 @@ if __name__ == "__main__":
     )
 
     tasks = taskset.create_taskset(n=1000, hi=2, lo=4)
-    # taskset.export_taskset(tasks)
-    # tasks = taskset.import_taskset("taskset_1699859989.pkl")
 
     fail_count = 0
-
     pass_count = 0
     for task in tqdm(tasks):
         for t in task:
