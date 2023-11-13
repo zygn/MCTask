@@ -1,13 +1,17 @@
 import random
+import pickle
+import time
 
 
 class MCTask:
 
-    def __init__(self, T_HI, T_LO, C, mode):
+    def __init__(self, T_HI, T_LO, C, X):
         self.T_HI = int(T_HI)
         self.T_LO = int(T_LO)
         self.C = int(C)
-        self.mode = mode
+        self.X = X
+        self.deadline = 0
+
 
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__, self.__dict__)
@@ -30,10 +34,10 @@ class MCTaskSet:
         u_hihi = 0
 
         for task in tasks:
-            if task.mode == "HI":
+            if task.X == "HI":
                 u_hi = task.C / task.T_HI
                 u_hihi += u_hi
-            elif task.mode == "LO":
+            elif task.X == "LO":
                 u_lo = task.C / task.T_LO
                 u_lolo += u_lo
 
@@ -45,7 +49,7 @@ class MCTaskSet:
             t_lo = t_hi * 2
             c = int(t_lo * self.c)
         else:
-            t_lo = random.randint(self.min_T_HI, self.max_T_HI)
+            t_lo = random.randint(self.min_T_LO, self.max_T_LO)
             t_hi = t_lo * 2
             c = int(t_lo * self.c)
 
@@ -54,26 +58,59 @@ class MCTaskSet:
 
         return MCTask(t_hi, t_lo, c, mode)
 
-    def gen_random_taskset(self):
-        t1 = self.gen_random_task("HI")
-        t2 = self.gen_random_task("HI")
-        t3 = self.gen_random_task("LO")
-        t4 = self.gen_random_task("LO")
-        t5 = self.gen_random_task("HI")
-        t6 = self.gen_random_task("HI")
+    def gen_random_taskset(self, hi=3, lo=3):
+        tasks = []
+        hi_count = 0
+        lo_count = 0
+        for _ in range(int(hi+lo)):
+            if hi_count < hi:
+                tasks.append(self.gen_random_task("HI"))
+                hi_count += 1
+                continue
 
-        return [t1, t2, t3, t4, t5, t6]
+            if lo_count < lo:
+                tasks.append(self.gen_random_task("LO"))
+                lo_count += 1
+                continue
 
-    def main(self):
+        return tasks
+
+    def create_taskset(self, n=100, hi=3, lo=3):
+        memory = []
         while True:
-            tasks = self.gen_random_taskset()
+            tasks = self.gen_random_taskset(hi, lo)
             u = self.calc_utilization(tasks)
 
-            if 1.4 > u > 1.0:
-                print(u, tasks)
+            # check same tasks
+            if self.max_utilization >= u >= self.min_utilization:
+                if tasks in memory:
+                    continue
+                else:
+                    memory.append(tasks)
+                    print(u, tasks)
+
+            if len(memory) == n:
+                break
+        return memory
+
+    def export_taskset(self, tasks):
+        with open("taskset_{}.pkl".format(round(time.time())), "wb") as f:
+            pickle.dump(tasks, f)
+    def import_taskset(self, filename):
+        with open(filename, "rb") as f:
+            return pickle.load(f)
+
 
 
 if __name__ == "__main__":
-
-    app = MCTaskSet()
-    app.main()
+    app = MCTaskSet(
+        max_T_HI=5,
+        min_T_HI=2,
+        max_T_LO=10,
+        min_T_LO=7,
+        c=0.2
+    )
+    mem = app.create_taskset(1, 2, 3)
+    app.export_taskset(mem)
+    # mem = app.import_taskset("")
+    print(mem)
