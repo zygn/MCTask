@@ -46,27 +46,6 @@ class MCTaskSimulator:
         return None
 
 
-
-    # def lowest_deadline(self, tasks) -> Optional[MCTask]:
-    #     grab_task = []
-    #
-    #     for task in tasks:
-    #         if task.X == self.current_mode:
-    #             grab_task.append(task)
-    #
-    #     if len(grab_task) == 0:
-    #         return None
-    #
-    #     if self.current_mode == "LO":
-    #         grab_task.sort(key=lambda x: x.T_LO)
-    #         #####
-    #
-    #     elif self.current_mode == "HI":
-    #         pass
-    #
-    #     return None
-
-
     def simulate(self, tasks):
 
         lcm = self.tasks_lcm(tasks)
@@ -74,18 +53,16 @@ class MCTaskSimulator:
 
         tasks = [[i+1, task] for i, task in enumerate(tasks)]
 
-        mode_change = lcm // 2
+        mode_change = int(lcm / 2)
 
         print("Scheduling tasks: \n\t" + "\n\t".join([f"{task}" for task in tasks]))
         print("LCM: " + str(lcm))
         print("Utilization: " + str(u))
         print("")
         print("Start simulation...")
-        print("Current time: " + str(self.current_time))
-        while self.current_time < lcm:
+        print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
 
-            if self.current_time >= mode_change:
-                self.current_mode = "HI"
+        while self.current_time < lcm:
 
             for task in tasks:
                 released_task = self.release_task(task)
@@ -95,7 +72,11 @@ class MCTaskSimulator:
                     print(f"\t\t{t[0]} Task released {t[1]}")
 
             self.current_time += 1
-            print("Current time: " + str(self.current_time))
+            if self.current_time >= mode_change:
+                self.current_mode = "HI"
+
+            print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
+            self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
 
             for i in range(len(self.job_queue)):
                 task = self.job_queue[i]
@@ -123,8 +104,9 @@ if __name__ == "__main__":
         c=0.2
     )
 
-    # tasks = taskset.create_taskset(n=1, hi=2, lo=4)
-    tasks = taskset.import_taskset("taskset_1699800316.pkl")
+    tasks = taskset.create_taskset(n=1000, hi=2, lo=4)
+    # taskset.export_taskset(tasks)
+    # tasks = taskset.import_taskset("taskset_1699841286.pkl")
 
     for task in tasks:
         app.simulate(task)
