@@ -101,7 +101,6 @@ class MCTaskSimulator:
             self.mode_change()
 
             # early deadline first
-            # self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
             for i in range(len(self.job_queue)):
                 task = self.job_queue[i]
 
@@ -144,15 +143,6 @@ def main():
     for task in tqdm(tasks):
         try:
             lcm = app.tasks_lcm(task)
-            # with ThreadPoolExecutor() as executor:
-            #     future_to_result = {executor.submit(ensure_future, app, mode_i, task): mode_i for mode_i in np.linspace(int(lcm/100), lcm, 99)}
-            #     for future in concurrent.futures.as_completed(future_to_result):
-            #         result = future_to_result[future]
-            #         try:
-            #             data = future.result()
-            #             pass_count += 1
-            #         except Exception as exc:
-            #             print('%r generated an exception: %s' % (data, exc))
             for i in np.linspace(int(lcm / 100), lcm, 99):
                 app.set_mode_change(ModeSchedule(int(i), "HI"))
                 app.simulate(task)
@@ -172,7 +162,7 @@ def ensure_future(task):
     app = MCTaskSimulator()
     try:
         lcm = app.tasks_lcm(task)
-        for i in tqdm(np.linspace(int(lcm / 100), lcm, 99)):
+        for i in np.linspace(int(lcm / 100), lcm, 99):
             app.set_mode_change(ModeSchedule(int(i), "HI"))
             app.simulate(task)
             app.reset()
@@ -188,11 +178,19 @@ def multi_main():
     passed = 0
     failed = 0
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        for result in zip(taskset, executor.map(ensure_future, taskset)):
-            if result:
-                passed += 1
-            else:
-                failed += 1
+        with tqdm(total=len(taskset)) as progress:
+            futures = []
+            for task in taskset:
+                future = executor.submit(ensure_future, task)
+                future.add_done_callback(lambda p: progress.update())
+                futures.append(future)
+
+            for future in futures:
+                result = future.result()
+                if result:
+                    passed += 1
+                else:
+                    failed += 1
 
     print(passed, failed)
 
