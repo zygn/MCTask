@@ -1,5 +1,8 @@
+import concurrent.futures
 import math
 import copy
+import numpy as np
+
 from tqdm import tqdm
 from collections import deque
 from typing import Optional
@@ -11,6 +14,8 @@ class ModeSchedule:
         self.time = time
         self.mode = mode
 
+    def __repr__(self):
+        return "{}({!r})".format(self.__class__.__name__, self.__dict__)
 
 class MCTaskSimulator:
 
@@ -19,6 +24,7 @@ class MCTaskSimulator:
         self.current_time = 0
         self.current_task = None
         self.job_queue = []
+        self.hi_changed = []
         self.mode_schedule = deque()
 
     def reset(self):
@@ -26,6 +32,7 @@ class MCTaskSimulator:
         self.current_time = 0
         self.current_task = None
         self.job_queue = []
+        self.hi_changed = []
         self.mode_schedule = deque()
 
     def tasks_lcm(self, tasks):
@@ -37,13 +44,14 @@ class MCTaskSimulator:
         return lcm
 
     def release_task(self, task: list) -> Optional[list]:
-
+        task[1].released_mode = self.current_mode
         if self.current_mode == "HI":
-            task[1].deadline = self.current_time + task[1].T_HI
+            task[1].deadline = (self.current_time + task[1].T_HI)
+            if not task[0] in self.hi_changed:
+                self.hi_changed.append(task[0])
             if self.current_time == 0:
                 return task
             elif self.current_time % task[1].T_HI == 0:
-
                 return task
 
         elif self.current_mode == "LO":
@@ -63,13 +71,14 @@ class MCTaskSimulator:
             return
 
         if self.mode_schedule[0].time <= self.current_time:
-            mc = self.mode_schedule.popleft()
+            mc = self.mode_schedule[0]
             self.current_mode = mc.mode
 
         return
 
     def simulate(self, tasks):
         lcm = self.tasks_lcm(tasks)
+        n = len(tasks)
         u = MCTaskSet().calc_utilization(tasks)
         tasks = [[i + 1, task] for i, task in enumerate(tasks)]
 
@@ -81,6 +90,10 @@ class MCTaskSimulator:
 
                 if released_task is not None:
                     self.job_queue.append(t)
+                    self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
+
+            if len(self.hi_changed) == n:
+                break
 
             # 1sec spend
             self.current_time += 1
@@ -88,7 +101,7 @@ class MCTaskSimulator:
             self.mode_change()
 
             # early deadline first
-            self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
+            # self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
             for i in range(len(self.job_queue)):
                 task = self.job_queue[i]
 
@@ -96,7 +109,7 @@ class MCTaskSimulator:
                 if task[1].deadline < self.current_time:
                     print()
                     print(f"\t\tTask {task[0]} missed {task[1]}")
-
+                    print("Mode changed when: ", self.mode_schedule[0])
                     print("Scheduling tasks: \n\t" + "\n\t".join([f"{pt}" for pt in tasks]))
                     print("Jobs: \n\t" + "\n\t".join([f"{pj}" for pj in self.job_queue]))
                     print("LCM: " + str(lcm))
@@ -111,37 +124,77 @@ class MCTaskSimulator:
                 break
 
 
-if __name__ == "__main__":
+
+def main():
     app = MCTaskSimulator()
     taskset = MCTaskSet(
-        max_T_HI=5,
-        min_T_HI=2,
-        max_T_LO=10,
-        min_T_LO=7,
-        max_u=1.15,
-        c=0.2
+        max_T_HI=15,
+        min_T_HI=10,
+        max_T_LO=30,
+        min_T_LO=15,
+        max_u=1.2,
+        c=0.1
     )
-
-    tasks = taskset.create_taskset(n=1000, hi=2, lo=4)
+    # tasks = taskset.create_taskset(n=100, hi=3, lo=5)
+    # taskset.export_taskset(tasks)
+    tasks = taskset.import_taskset("taskset_1699950020.pkl")
 
     fail_count = 0
     pass_count = 0
     for task in tqdm(tasks):
-        for t in task:
-            if t.X == "HI":
-                app.current_mode = "LO"
-                app.set_mode_change(ModeSchedule(t.T_HI, "HI"))
-            else:
-                app.current_mode = "HI"
-                app.set_mode_change(ModeSchedule(t.T_HI, "LO"))
-            try:
+        try:
+            lcm = app.tasks_lcm(task)
+            # with ThreadPoolExecutor() as executor:
+            #     future_to_result = {executor.submit(ensure_future, app, mode_i, task): mode_i for mode_i in np.linspace(int(lcm/100), lcm, 99)}
+            #     for future in concurrent.futures.as_completed(future_to_result):
+            #         result = future_to_result[future]
+            #         try:
+            #             data = future.result()
+            #             pass_count += 1
+            #         except Exception as exc:
+            #             print('%r generated an exception: %s' % (data, exc))
+            for i in np.linspace(int(lcm / 100), lcm, 99):
+                app.set_mode_change(ModeSchedule(int(i), "HI"))
                 app.simulate(task)
-                pass_count += 1
-            except Exception as e:
-                fail_count += 1
-                print(e)
+                app.reset()
+
+
+        except Exception as e:
+            print(e)
+            fail_count += 1
             app.reset()
 
-
     print()
-    print("Total:", pass_count+fail_count , "Fail:", fail_count, "Success:", pass_count, "Ratio:", pass_count/(pass_count+fail_count))
+    print("Total:", pass_count + fail_count, "Fail:", fail_count, "Success:", pass_count, "Ratio:",
+          pass_count / (pass_count + fail_count))
+
+def ensure_future(task):
+    app = MCTaskSimulator()
+    try:
+        lcm = app.tasks_lcm(task)
+        for i in tqdm(np.linspace(int(lcm / 100), lcm, 99)):
+            app.set_mode_change(ModeSchedule(int(i), "HI"))
+            app.simulate(task)
+            app.reset()
+        return True
+
+    except Exception as e:
+        print(e)
+        return False
+
+
+def multi_main():
+    taskset = MCTaskSet().import_taskset("taskset_1699950020.pkl")
+    passed = 0
+    failed = 0
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for result in zip(taskset, executor.map(ensure_future, taskset)):
+            if result:
+                passed += 1
+            else:
+                failed += 1
+
+    print(passed, failed)
+
+if __name__ == "__main__":
+    multi_main()

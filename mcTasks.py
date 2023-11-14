@@ -12,6 +12,7 @@ class MCTask:
         self.C = int(C)
         self.X = X
         self.deadline = 0
+        self.released_mode = "LO"
 
 
     def __repr__(self):
