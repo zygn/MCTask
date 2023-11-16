@@ -1,6 +1,7 @@
 import concurrent.futures
 import math
 import copy
+import time 
 import numpy as np
 
 from tqdm import tqdm
@@ -136,7 +137,7 @@ def main():
     )
     # tasks = taskset.create_taskset(n=100, hi=3, lo=5)
     # taskset.export_taskset(tasks)
-    tasks = taskset.import_taskset("taskset_1699950020.pkl")
+    tasks = taskset.import_taskset("taskset_u_1.3.pkl")
 
     fail_count = 0
     pass_count = 0
@@ -158,41 +159,50 @@ def main():
     print("Total:", pass_count + fail_count, "Fail:", fail_count, "Success:", pass_count, "Ratio:",
           pass_count / (pass_count + fail_count))
 
-def ensure_future(task):
+def ensure_future(i, task):
     app = MCTaskSimulator()
     try:
+        t0 = time.time()
         lcm = app.tasks_lcm(task)
-        for i in np.linspace(int(lcm / 100), lcm, 99):
-            app.set_mode_change(ModeSchedule(int(i), "HI"))
+        print(f"Taskset {i} started. LCM: {lcm}")
+        for l in np.linspace(0, lcm, 10):
+            app.set_mode_change(ModeSchedule(int(l), "HI"))
             app.simulate(task)
             app.reset()
+        print(f"Taskset {i} end. elapsed time: {time.time()-t0}s")
         return True
 
     except Exception as e:
-        print(e)
+        print(f"Taskset {i} Failed: {e}")
         return False
 
 
-def multi_main():
-    taskset = MCTaskSet().import_taskset("taskset_1699950020.pkl")
+def multi_main(file):
+    taskset = MCTaskSet().import_taskset(file)
+    print(file)
     passed = 0
     failed = 0
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        with tqdm(total=len(taskset)) as progress:
-            futures = []
-            for task in taskset:
-                future = executor.submit(ensure_future, task)
-                future.add_done_callback(lambda p: progress.update())
-                futures.append(future)
+    try:
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            with tqdm(total=len(taskset)) as progress:
+                futures = []
+                for i, task in enumerate(taskset):
+                    future = executor.submit(ensure_future, i, task)
+                    future.add_done_callback(lambda p: progress.update())
+                    futures.append(future)
 
-            for future in futures:
-                result = future.result()
-                if result:
-                    passed += 1
-                else:
-                    failed += 1
+                for future in futures:
+                    result = future.result()
+                    if result:
+                        passed += 1
+                    else:
+                        failed += 1
+    except KeyboardInterrupt:
+        for future in futures:
+            future.cancel()
 
     print(passed, failed)
 
 if __name__ == "__main__":
-    multi_main()
+
+    multi_main("taskset_u1.1_1.2.pkl")
