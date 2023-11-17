@@ -2,6 +2,7 @@ import random
 import pickle
 import time
 from tqdm import tqdm
+import math 
 
 
 class MCTask:
@@ -21,7 +22,7 @@ class MCTask:
 
 class MCTaskSet:
 
-    def __init__(self, max_u=1.2, min_u=1.0, max_T_HI=15, min_T_HI=1, max_T_LO=30, min_T_LO=15, c=0.2):
+    def __init__(self, max_u=1.2, min_u=1.0, max_T_HI=15, min_T_HI=1, max_T_LO=30, min_T_LO=15, c=0.2, max_lcm=10000):
         self.max_utilization = max_u
         self.min_utilization = min_u
         self.max_T_HI = max_T_HI
@@ -29,6 +30,9 @@ class MCTaskSet:
         self.max_T_LO = max_T_LO
         self.min_T_LO = min_T_LO
         self.c = c
+        self.max_lcm = max_lcm
+        self.taskset = []
+        self.not_hit = 0
 
     def calc_utilization(self, tasks):
         task: MCTask
@@ -82,31 +86,55 @@ class MCTaskSet:
                 continue
 
         return tasks
+    
+    def tasks_lcm(self, tasks):
+        # calculate T_LOs LCM
+        task: MCTask
+        lcm = 1
+        for task in tasks:
+            lcm = lcm * task.T_LO // math.gcd(lcm, task.T_LO)
+        return lcm
 
     def create_taskset(self, n=100, hi=3, lo=3):
         pbar = tqdm(total=n)
         memory = []
         while True:
+            if self.not_hit > 100:
+                self.c -= 0.01
+                self.not_hit = 0
+            
+            if self.c <= 0.0:
+                self.c = 1.0
+
             tasks = self.gen_random_taskset(hi, lo)
+            
             u = self.calc_utilization(tasks)
+            # print(u)
+            if self.tasks_lcm(tasks) > self.max_lcm:
+                continue
 
             # check same tasks
-            if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] < 1 and u[1] < 1:
+            if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] <= 1 and u[1] <= 1:
                 if tasks in memory:
                     continue
                 else:
                     memory.append(tasks)
+                    self.not_hit = 0
                     pbar.update(1)
                     # print(u, tasks)
+            else:
+                self.not_hit += 1
 
             if len(memory) == n:
                 pbar.close()
                 break
+
+        self.taskset = memory
         return memory
 
-    def export_taskset(self, tasks):
-        with open("taskset_{}.pkl".format(round(time.time())), "wb") as f:
-            pickle.dump(tasks, f)
+    def export_taskset(self, name):
+        with open(f"taskset_{name}.pkl", "wb") as f:
+            pickle.dump(self.taskset, f)
 
     def import_taskset(self, filename):
         with open(filename, "rb") as f:
@@ -116,13 +144,18 @@ class MCTaskSet:
 
 if __name__ == "__main__":
     app = MCTaskSet(
-        max_T_HI=5,
-        min_T_HI=2,
-        max_T_LO=10,
-        min_T_LO=7,
-        c=0.2
+        max_T_HI=10,
+        min_T_HI=5,
+        max_T_LO=30,
+        min_T_LO=20,
+        min_u=1.2,
+        max_u=1.3,
+        c=0.17
     )
-    mem = app.create_taskset(1, 2, 3)
-    app.export_taskset(mem)
-    # mem = app.import_taskset("")
-    print(mem)
+    mem = app.create_taskset(100, 3, 5)
+    app.export_taskset("u1.2-1.3")
+    # mem = app.import_taskset("/home/yundo/Workspace/MCTask/taskset_u1.3-1.4.pkl")
+    
+    for i in mem:
+        print(i)
+

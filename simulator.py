@@ -91,16 +91,17 @@ class MCTaskSimulator:
 
                 if released_task is not None:
                     self.job_queue.append(t)
-                    self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
+                    
 
-            if len(self.hi_changed) == n:
-                break
-
+            # if len(self.hi_changed) == n:
+            #     break
+            
+            self.mode_change()
             # 1sec spend
             self.current_time += 1
             # check scheduled mode change
-            self.mode_change()
-
+            
+            self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
             # early deadline first
             for i in range(len(self.job_queue)):
                 task = self.job_queue[i]
@@ -165,10 +166,13 @@ def ensure_future(i, task):
         t0 = time.time()
         lcm = app.tasks_lcm(task)
         print(f"Taskset {i} started. LCM: {lcm}")
-        for l in np.linspace(0, lcm, 10):
-            app.set_mode_change(ModeSchedule(int(l), "HI"))
-            app.simulate(task)
-            app.reset()
+        for t in task:
+            if t.X == "HI":
+                for k in range(1, 33+1):
+                    app.set_mode_change(ModeSchedule(t.T_LO * k, "HI"))
+                    app.simulate(task)
+                    app.reset()
+            
         print(f"Taskset {i} end. elapsed time: {time.time()-t0}s")
         return True
 
@@ -197,6 +201,7 @@ def multi_main(file):
                         passed += 1
                     else:
                         failed += 1
+
     except KeyboardInterrupt:
         for future in futures:
             future.cancel()
@@ -204,5 +209,7 @@ def multi_main(file):
     print(passed, failed)
 
 if __name__ == "__main__":
+    import sys 
+    path = sys.argv[1]
 
-    multi_main("taskset_u1.1_1.2.pkl")
+    multi_main(path)
