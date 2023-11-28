@@ -14,6 +14,7 @@ class MCTask:
         self.X = X
         self.deadline = 0
         self.released_mode = "LO"
+        self.HI_start = 0
 
 
     def __repr__(self):
@@ -22,7 +23,7 @@ class MCTask:
 
 class MCTaskSet:
 
-    def __init__(self, max_u=1.2, min_u=1.0, max_T_HI=15, min_T_HI=1, max_T_LO=30, min_T_LO=15, c=0.2, max_lcm=10000):
+    def __init__(self, max_u=1.2, min_u=1.0, max_T_HI=15, min_T_HI=1, max_T_LO=30, min_T_LO=15, c=0.2, max_lcm=10000, scheduler="edf"):
         self.max_utilization = max_u
         self.min_utilization = min_u
         self.max_T_HI = max_T_HI
@@ -33,9 +34,12 @@ class MCTaskSet:
         self.max_lcm = max_lcm
         self.taskset = []
         self.not_hit = 0
+        self.top_hit = False
+        self.scheduler = scheduler
 
     def calc_utilization(self, tasks):
         task: MCTask
+        n = len(tasks)
         u_lolo = 0
         u_lohi = 0
         u_hihi = 0
@@ -53,7 +57,15 @@ class MCTaskSet:
                 u_hilo += u_hi
                 u_lolo += u_lo
 
-        return [u_lolo + u_lohi, u_lohi + u_hihi, u_lolo + u_hihi]
+            
+        if self.scheduler.lower() == "edf":
+            return [u_lolo + u_lohi, u_lohi + u_hihi, u_lolo + u_hihi]
+            
+        elif self.scheduler.lower() == "rm": 
+            u_max = n * (2 ** (1/n) - 1)
+            return [u_lolo + u_lohi, u_lohi + u_hihi, u_lolo + u_hihi, u_max]
+
+        
 
     def gen_random_task(self, mode):
         if mode == "HI":
@@ -99,12 +111,16 @@ class MCTaskSet:
         pbar = tqdm(total=n)
         memory = []
         while True:
-            if self.not_hit > 100:
+            if self.not_hit > 500:
                 self.c -= 0.01
                 self.not_hit = 0
             
-            if self.c <= 0.0:
+            if self.c <= 0.0 and not self.top_hit:
                 self.c = 1.0
+                self.top_hit = True
+            
+            elif self.c <= 0.0 and self.top_hit:
+                break
 
             tasks = self.gen_random_taskset(hi, lo)
             
@@ -114,16 +130,32 @@ class MCTaskSet:
                 continue
 
             # check same tasks
-            if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] <= 1 and u[1] <= 1:
-                if tasks in memory:
-                    continue
+            if self.scheduler == "edf":
+                if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] <= 1 and u[1] <= 1:
+                    if tasks in memory:
+                        continue
+                    else:
+                        memory.append(tasks)
+                        self.not_hit = 0
+                        pbar.update(1)
+                        # print(u, tasks)
                 else:
-                    memory.append(tasks)
-                    self.not_hit = 0
-                    pbar.update(1)
-                    # print(u, tasks)
+                    self.not_hit += 1
+
+            elif self.scheduler == "rm":
+                if (self.max_utilization >= u[2] >= self.min_utilization) and u[0] <= 1 and u[1] <= 1:
+                    if tasks in memory:
+                        continue
+                    else:
+                        memory.append(tasks)
+                        self.not_hit = 0
+                        pbar.update(1)
+                        # print(u, tasks)
+                else:
+                    self.not_hit += 1
+
             else:
-                self.not_hit += 1
+                break
 
             if len(memory) == n:
                 pbar.close()
@@ -144,16 +176,16 @@ class MCTaskSet:
 
 if __name__ == "__main__":
     app = MCTaskSet(
-        max_T_HI=10,
         min_T_HI=5,
-        max_T_LO=30,
-        min_T_LO=20,
-        min_u=1.2,
-        max_u=1.3,
-        c=0.17
+        max_T_HI=10,
+        min_T_LO=30,
+        max_T_LO=50,
+        min_u=1.0,
+        max_u=1.2,
+        c=0.15
     )
-    mem = app.create_taskset(100, 3, 5)
-    app.export_taskset("u1.2-1.3")
+    mem = app.create_taskset(100, 5, 5)
+    app.export_taskset("5_5")
     # mem = app.import_taskset("/home/yundo/Workspace/MCTask/taskset_u1.3-1.4.pkl")
     
     for i in mem:

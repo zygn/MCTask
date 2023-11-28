@@ -25,7 +25,7 @@ class MCTaskSimulator:
         self.current_time = 0
         self.current_task = None
         self.job_queue = []
-        self.hi_changed = []
+        self.mode_change_time = 0
         self.mode_schedule = deque()
 
     def reset(self):
@@ -33,7 +33,6 @@ class MCTaskSimulator:
         self.current_time = 0
         self.current_task = None
         self.job_queue = []
-        self.hi_changed = []
         self.mode_schedule = deque()
 
     def tasks_lcm(self, tasks):
@@ -45,14 +44,14 @@ class MCTaskSimulator:
         return lcm
 
     def release_task(self, task: list) -> Optional[list]:
+        t: MCTask = task[1]
+    
         task[1].released_mode = self.current_mode
         if self.current_mode == "HI":
             task[1].deadline = (self.current_time + task[1].T_HI)
-            if not task[0] in self.hi_changed:
-                self.hi_changed.append(task[0])
             if self.current_time == 0:
                 return task
-            elif self.current_time % task[1].T_HI == 0:
+            elif (self.current_time - task[1].HI_start) % task[1].T_HI == 0:
                 return task
 
         elif self.current_mode == "LO":
@@ -77,7 +76,7 @@ class MCTaskSimulator:
 
         return
 
-    def simulate(self, tasks):
+    def simulate_edf(self, tasks):
         lcm = self.tasks_lcm(tasks)
         n = len(tasks)
         u = MCTaskSet().calc_utilization(tasks)
@@ -91,32 +90,64 @@ class MCTaskSimulator:
 
                 if released_task is not None:
                     self.job_queue.append(t)
+                    # sort by tasks deadline
+                    self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
                     
-
-            # if len(self.hi_changed) == n:
-            #     break
-            
+            # check scheduled mode change
             self.mode_change()
             # 1sec spend
             self.current_time += 1
-            # check scheduled mode change
             
-            self.job_queue = sorted(self.job_queue, key=lambda x: x[1].deadline)
             # early deadline first
             for i in range(len(self.job_queue)):
                 task = self.job_queue[i]
 
                 # deadline missed
                 if task[1].deadline < self.current_time:
-                    print()
-                    print(f"\t\tTask {task[0]} missed {task[1]}")
-                    print("Mode changed when: ", self.mode_schedule[0])
-                    print("Scheduling tasks: \n\t" + "\n\t".join([f"{pt}" for pt in tasks]))
-                    print("Jobs: \n\t" + "\n\t".join([f"{pj}" for pj in self.job_queue]))
-                    print("LCM: " + str(lcm))
-                    print("Utilization: " + str(u))
-                    print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
+                    # print()
+                    # print(f"\t\tTask {task[0]} missed {task[1]}")
+                    # print("Mode changed when: ", self.mode_schedule[0])
+                    # print("Scheduling tasks: \n\t" + "\n\t".join([f"{pt}" for pt in tasks]))
+                    # print("Jobs: \n\t" + "\n\t".join([f"{pj}" for pj in self.job_queue]))
+                    # print("LCM: " + str(lcm))
+                    # print("Utilization: " + str(u))
+                    # print("Current time: " + str(self.current_time) + " Mode: " + self.current_mode)
 
+                    raise Exception(f"Task missed deadline when time {self.current_time}")
+                # task 1sec spend
+                task[1].C -= 1
+                if task[1].C == 0:
+                    if task[1].HI_start == 0 and task[1].released_mode == "HI":
+                        for j in range(len(tasks)):
+                            if tasks[j][0] == task[0]:
+                                tasks[j][1].HI_start = task[1].deadline
+                    self.job_queue.remove(task)
+                break
+    
+    def simulate_rm(self, tasks):
+        lcm = self.tasks_lcm(tasks)
+        u = MCTaskSet(scheduler="rm").calc_utilization(tasks)
+        tasks = [[i, task] for i, task in enumerate(tasks)] # tasks[0] is priority
+
+        while self.current_time < lcm:
+            for task in tasks:
+                t = copy.deepcopy(task)
+                released_task = self.release_task(t)
+
+                if released_task is not None:
+                    self.job_queue.append(t)
+                    # sort by tasks priority 
+                    self.job_queue = sorted(self.job_queue, key=lambda x: x[0])
+
+            # check scheduled mode change
+            self.mode_change()
+            # 1sec spend
+            self.current_time += 1
+            
+            for i in range(len(self.job_queue)):
+                task = self.job_queue[i]
+                # deadline missed
+                if task[1].deadline < self.current_time:
                     raise Exception(f"Task missed deadline when time {self.current_time}")
                 # task 1sec spend
                 task[1].C -= 1
@@ -160,30 +191,32 @@ def main():
     print("Total:", pass_count + fail_count, "Fail:", fail_count, "Success:", pass_count, "Ratio:",
           pass_count / (pass_count + fail_count))
 
-def ensure_future(i, task):
+def ensure_future(task, scheduler="edf"):
     app = MCTaskSimulator()
     try:
-        t0 = time.time()
-        lcm = app.tasks_lcm(task)
-        print(f"Taskset {i} started. LCM: {lcm}")
         for t in task:
             if t.X == "HI":
                 for k in range(1, 33+1):
                     app.set_mode_change(ModeSchedule(t.T_LO * k, "HI"))
-                    app.simulate(task)
+                    if scheduler == "edf":
+                        app.simulate_edf(task)
+                    elif scheduler == "rm":
+                        app.simulate_rm(task)
                     app.reset()
-            
-        print(f"Taskset {i} end. elapsed time: {time.time()-t0}s")
+
         return True
 
     except Exception as e:
-        print(f"Taskset {i} Failed: {e}")
         return False
 
 
-def multi_main(file):
-    taskset = MCTaskSet().import_taskset(file)
-    print(file)
+def multi_main(file=None, obj=None, scheduler="edf"):
+    if file is not None:
+        taskset = MCTaskSet().import_taskset(file)
+        print(file)
+    else:
+        taskset = obj
+
     passed = 0
     failed = 0
     try:
@@ -191,7 +224,7 @@ def multi_main(file):
             with tqdm(total=len(taskset)) as progress:
                 futures = []
                 for i, task in enumerate(taskset):
-                    future = executor.submit(ensure_future, i, task)
+                    future = executor.submit(ensure_future, task, scheduler)
                     future.add_done_callback(lambda p: progress.update())
                     futures.append(future)
 
@@ -206,7 +239,7 @@ def multi_main(file):
         for future in futures:
             future.cancel()
 
-    print(passed, failed)
+    return passed, failed
 
 if __name__ == "__main__":
     import sys 
